@@ -1,6 +1,7 @@
 #pragma once
 #include "tcp_listener.h"
 #include <arpa/inet.h>
+#include <chrono>
 #include <cstring>
 #include <iostream>
 #include <netinet/in.h>
@@ -8,6 +9,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <vector>
+
 
 class TcpServer {
 
@@ -62,9 +64,13 @@ public:
       if (valread == 0) {
         std::cout << "Connection closed" << std::endl;
         break;
+      } else if (valread < 0) {
+        perror("read");
+        exit(EXIT_FAILURE);
       }
+      auto msg = parse_message(buffer);
       for (auto listener : listeners) {
-        listener->on_message(std::string(buffer));
+        listener->on_message(msg);
       }
     }
   }

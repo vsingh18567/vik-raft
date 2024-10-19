@@ -1,7 +1,7 @@
 #pragma once
+#include "messages.h"
 #include <string>
-
 class TcpListener {
 public:
-  virtual void on_message(const std::string &msg) = 0;
+  virtual void on_message(Message m) = 0;
 };

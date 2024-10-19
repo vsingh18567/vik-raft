@@ -39,13 +39,12 @@ public:
   TcpClient(const TcpClient &) = delete;
   TcpClient &operator=(const TcpClient &) = delete;
 
-  void send_to(const std::string &msg) {
-    send(fd, msg.c_str(), msg.size(), 0);
+  void send_to(uint32_t sid, const std::string &msg, MessageType type) {
+    auto msg_str = build_message(msg, sid, type);
+    send(fd, msg_str.c_str(), msg_str.size(), 0);
   }
 
-  ~TcpClient() {
-    close(fd);
-  }
+  ~TcpClient() { close(fd); }
 
 private:
   std::string address;

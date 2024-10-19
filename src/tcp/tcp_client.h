@@ -1,4 +1,5 @@
 #pragma once
+#include "messages.h"
 #include <arpa/inet.h>
 #include <cstring>
 #include <iostream>
@@ -8,7 +9,6 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
-
 class TcpClient {
 public:
   TcpClient(std::string address, int port) : address(address), port(port) {
@@ -39,13 +39,12 @@ public:
   TcpClient(const TcpClient &) = delete;
   TcpClient &operator=(const TcpClient &) = delete;
 
-  void send_to(const std::string &msg) {
-    send(fd, msg.c_str(), msg.size(), 0);
+  void send_to(uint32_t sender, const std::string &msg) {
+    auto built_msg = build_message(msg, sender, MessageType::APPEND_ENTRIES);
+    send(fd, built_msg.c_str(), built_msg.size(), 0);
   }
 
-  ~TcpClient() {
-    close(fd);
-  }
+  ~TcpClient() { close(fd); }
 
 private:
   std::string address;

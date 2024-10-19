@@ -10,9 +10,13 @@ int main(int argc, char **argv) {
   ServerNode node(argv[1], id);
   for (int i = 0; i < 20; i++) {
     if (id == 0) {
-      node.send_message(1, "hello");
+      node.send_message(
+          "hellotheremyanmeifdfdsfrwjfrjfnrejnvefjnvfjenvekrnvkenvkrenvrinvirnv"
+          "iefnvneviernvirenviernvirenverinverinverin");
+    } else if (id == 1) {
+      node.send_message("world");
     } else {
-      node.send_message(0, "world");
+      node.send_message("foo");
     }
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }

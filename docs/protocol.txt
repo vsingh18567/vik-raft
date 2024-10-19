@@ -1,0 +1,12 @@
+Message := 
+    [size: 4 bytes]
+    [MessageContent]
+
+MessageContent :=
+    [uid: 4 bytes]
+    [MessageContentContent]
+
+MessageContentContent :=
+    | [RequestVote]
+    | [AppendEntries]
+

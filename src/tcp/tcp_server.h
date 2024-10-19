@@ -1,4 +1,5 @@
 #pragma once
+#include "messages.h"
 #include "tcp_listener.h"
 #include <arpa/inet.h>
 #include <cstring>
@@ -8,7 +9,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <vector>
-
 class TcpServer {
 
 public:
@@ -36,18 +36,17 @@ public:
   void add_listener(TcpListener *listener) { listeners.push_back(listener); }
 
   static void open(TcpServer &server) {
-    if (listen(server.fd, 3) < 0) {
+    if (listen(server.fd, 20) < 0) {
       perror("listen");
       exit(EXIT_FAILURE);
     }
-    while (true) {
+    while (server.fd >= 0) {
       int new_socket;
       int addrlen = sizeof(server_addr);
       if ((new_socket =
                accept(server.fd, (struct sockaddr *)&server.server_addr,
                       (socklen_t *)&addrlen)) < 0) {
         perror("accept");
-        exit(EXIT_FAILURE);
       }
       std::thread t(handle_connection, new_socket, server.listeners);
       t.detach();
@@ -63,8 +62,10 @@ public:
         std::cout << "Connection closed" << std::endl;
         break;
       }
+
       for (auto listener : listeners) {
-        listener->on_message(std::string(buffer));
+        Message m = parse_message(buffer);
+        listener->on_message(std::move(m));
       }
     }
   }
@@ -72,6 +73,7 @@ public:
   ~TcpServer() {
     std::cout << "Destructing server\n";
     close(fd);
+    fd = -1;
   }
 
 private:

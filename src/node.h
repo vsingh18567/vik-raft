@@ -1,59 +1,91 @@
 #pragma once
-#include "tcp/tcp_client.h"
-#include "tcp/tcp_listener.h"
-#include "tcp/tcp_server.h"
-#include <fstream>
-#include <iostream>
-#include <memory>
-#include <string>
-#include <unordered_map>
-#include <vector>
+
+#include "config_parser.h"
 
 enum class ServerState { LEADER, FOLLOWER, CANDIDATE };
 
+int64_t get_election_interval() {
+  // [150, 300] ms
+  return (150 + (rand() % 150)) * 1'000'000;
+}
+
+inline int64_t time_ns() {
+  return std::chrono::high_resolution_clock::now().time_since_epoch().count();
+}
+
 class ServerNode : public TcpListener {
 public:
-  ServerNode(const std::string &config_file, int id) : sid(id) {
-    // read config file
-    // set up connections
-    // start election timer
-    std::ifstream file(config_file);
-    std::string line;
-    while (std::getline(file, line)) {
-      int comma = line.find(",");
-      int this_id = std::stoi(line.substr(0, comma));
-      std::string address_port = line.substr(comma + 1);
-      int colon = address_port.find(":");
-      std::string address = address_port.substr(0, colon);
-      int port = std::stoi(address_port.substr(colon + 1));
-      if (this_id == sid) {
-        server = std::make_unique<TcpServer>(port);
-        server->add_listener(this);
-        std::thread(TcpServer::open, std::ref(*server)).detach();
-      } else {
-        auto client = std::make_unique<TcpClient>(address, port);
-        clients.emplace(this_id, std::move(client));
-      }
+  ServerNode(const std::string &config_file, uint32_t id)
+      : sid(id), state(ServerState::FOLLOWER),
+        election_interval(get_election_interval()), last_election(0) {
+
+    ConfigParser parser(config_file, id);
+    server = parser.get_server();
+    clients = parser.get_clients();
+    server->add_listener(this);
+    std::thread(TcpServer::open, std::ref(*server)).detach();
+  }
+
+  void on_message(Message m) override {
+    switch (m.type) {
+    case MessageType::APPEND_ENTRIES:
+      on_append_entries();
+      break;
+    case MessageType::REQUEST_VOTE:
+      on_request_vote();
+      break;
     }
   }
 
-  void on_message(const std::string &msg) override {
-    std::cout << "id: " << sid << " Received message: " << msg << std::endl;
+  void main() {
+    while (true) {
+      if (state == ServerState::FOLLOWER) {
+        if (last_election + election_interval < time_ns()) {
+          state = ServerState::CANDIDATE;
+          send_request_vote();
+        }
+      } else if (state == ServerState::CANDIDATE) {
+        // send request vote
+      } else if (state == ServerState::LEADER) {
+        // send append entries
+      }
+    }
   }
-
-  void send_message(int id, const std::string &msg) {
-    std::cout << "id: " << sid << " Sending message: " << msg << std::endl;
-    clients.at(id)->send_to(msg);
+  void send_message(const std::string &msg) {
+    for (const auto &[id, client] : clients) {
+      std::cout << "id: " << sid << " Sending message: " << msg << std::endl;
+      client->send_to(sid, msg);
+    }
   }
 
 private:
+  void send_request_vote() {
+
+  };
+
+  void send_append_entries() {
+
+  };
+
+  void on_request_vote() {
+
+  };
+
+  void on_append_entries() {
+
+  };
+
   // persistent state
-  int sid;
+  uint32_t sid;
   std::unique_ptr<TcpServer> server;
   std::unordered_map<int, std::unique_ptr<TcpClient>> clients;
   uint64_t current_term;
   uint64_t voted_for;
   std::vector<std::string> log;
+
+  ServerState state;
+  int64_t election_interval;
+  int64_t last_election;
 
   // volatile state
   uint64_t commit_index;

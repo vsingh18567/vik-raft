@@ -10,7 +10,6 @@
 #include <unistd.h>
 #include <vector>
 
-
 class TcpServer {
 
 public:
@@ -38,7 +37,7 @@ public:
   void add_listener(TcpListener *listener) { listeners.push_back(listener); }
 
   static void open(TcpServer &server) {
-    if (listen(server.fd, 3) < 0) {
+    if (listen(server.fd, 5) < 0) {
       perror("listen");
       exit(EXIT_FAILURE);
     }
@@ -59,7 +58,8 @@ public:
   static void handle_connection(int new_socket,
                                 std::vector<TcpListener *> listeners) {
     while (true) {
-      char buffer[1024] = {0};
+      char buffer[1024];
+      memset(buffer, 0, 1024);
       int valread = read(new_socket, buffer, 1024);
       if (valread == 0) {
         std::cout << "Connection closed" << std::endl;
@@ -69,7 +69,7 @@ public:
         exit(EXIT_FAILURE);
       }
       auto msg = parse_message(buffer);
-      for (auto listener : listeners) {
+      for (auto &listener : listeners) {
         listener->on_message(msg);
       }
     }

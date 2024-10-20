@@ -15,6 +15,8 @@ public:
   TcpClient(std::string address, int port) : address(address), port(port) {
 
     while (true) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+
       if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
         perror("socket failed");
         exit(EXIT_FAILURE);
@@ -29,8 +31,8 @@ public:
       if (connect(fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) <
           0) {
         std::cout << "Connection failed, retrying in 1 second" << std::endl;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
       } else {
+        LOG("Connected to " + address + ":" + std::to_string(port));
         break;
       }
     }
@@ -42,7 +44,10 @@ public:
 
   void send_to(uint32_t sid, const std::string &msg, MessageType type) {
     auto msg_str = build_message(msg, sid, type);
-    send(fd, msg_str.c_str(), msg_str.size(), 0);
+    if (send(fd, msg_str.c_str(), msg_str.size(), 0) < 0) {
+      perror("send failed");
+      exit(EXIT_FAILURE);
+    }
   }
 
   ~TcpClient() { close(fd); }

@@ -1,2 +1,3 @@
 .vscode
 raft-server
+*.dSYM

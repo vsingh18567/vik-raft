@@ -6,8 +6,48 @@
 enum class MessageType : uint32_t {
   APPEND_ENTRIES = 0,
   REQUEST_VOTE = 1,
+  APPEND_ENTRIES_RESPONSE = 2,
+  REQUEST_VOTE_RESPONSE = 3
+};
+struct AppendEntries {
+  uint64_t term;
+  uint32_t leader_id;
+  uint64_t prev_log_index;
+  uint64_t prev_log_term;
+  std::vector<std::string> entries;
+  uint64_t leader_commit;
+
+  constexpr static MessageType get_type() {
+    return MessageType::APPEND_ENTRIES;
+  }
 };
 
+struct AppendEntriesResponse {
+  uint64_t term;
+  bool success;
+
+  constexpr static MessageType get_type() {
+    return MessageType::APPEND_ENTRIES_RESPONSE;
+  }
+};
+
+struct RequestVote {
+  uint64_t term;
+  uint32_t candidate_id;
+  uint64_t last_log_index;
+  uint64_t last_log_term;
+
+  constexpr static MessageType get_type() { return MessageType::REQUEST_VOTE; }
+};
+
+struct RequestVoteResponse {
+  uint64_t term;
+  bool vote_granted;
+
+  constexpr static MessageType get_type() {
+    return MessageType::REQUEST_VOTE_RESPONSE;
+  }
+};
 struct Message {
   uint32_t size;
   uint32_t id;
@@ -38,28 +78,12 @@ Message parse_message(char *msg) {
   return {size, id, type, msg_str};
 }
 
-struct AppendEntries {
-  uint64_t term;
-  uint64_t leader_id;
-  uint64_t prev_log_index;
-  uint64_t prev_log_term;
-  std::vector<std::string> entries;
-  uint64_t leader_commit;
-};
+template <typename T> T parse_message_contents(const std::string &msg) {
+  T t = *reinterpret_cast<const T *>(msg.data());
+  return t;
+}
 
-struct AppendEntriesResponse {
-  uint64_t term;
-  bool success;
-};
-
-struct RequestVote {
-  uint64_t term;
-  uint64_t candidate_id;
-  uint64_t last_log_index;
-  uint64_t last_log_term;
-};
-
-struct RequestVoteResponse {
-  uint64_t term;
-  bool vote_granted;
-};
+template <typename T> std::string build_message(const T &t, uint32_t id) {
+  std::string t_str(reinterpret_cast<const char *>(&t), sizeof(T));
+  return t_str;
+}

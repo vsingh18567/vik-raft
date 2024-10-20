@@ -6,7 +6,7 @@ int main(int argc, char **argv) {
     std::cout << "Usage: ./main <config_file> <id>" << std::endl;
     return 1;
   }
-  int id = std::stoi(argv[2]);
+  uint32_t id = std::stoi(argv[2]);
   ServerNode node(argv[1], id);
   node.main();
   // for (int i = 0; i < 20; i++) {

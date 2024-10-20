@@ -6,5 +6,6 @@
 - [x] Message parsing between nodes
 - [ ] Leader election
 - [ ] Append entries
+- [ ] Allow clients to connect
 - [ ] Ensure behavior on node dying
 - [ ] Allow nodes to rejoin

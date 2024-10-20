@@ -14,6 +14,11 @@
 
 enum class ServerState { LEADER, FOLLOWER, CANDIDATE };
 
+struct SelfElection {
+  int num_responded;
+  int num_votes;
+};
+
 int64_t get_election_interval() {
   // [150, 300] ms
   return (500 + (rand() % 500)) * 1'000'000;
@@ -38,10 +43,6 @@ public:
       clients.insert({id, std::make_unique<TcpClient>(address_port.first,
                                                       address_port.second)});
     }
-    LOG(std::to_string(clients.size()));
-    for (const auto &[id, client] : clients) {
-      LOG("Sending to " + std::to_string(id));
-    }
     std::this_thread::sleep_for(std::chrono::seconds(2));
   }
 
@@ -57,7 +58,7 @@ public:
       on_request_vote_response(m);
       break;
     default:
-      LOG("Unknown message type", LogLevel::ERROR);
+      LOG_LEVEL("Unknown message type", LogLevel::ERROR);
       break;
     }
   }
@@ -65,59 +66,82 @@ public:
   void main() {
     while (true) {
       if (state == ServerState::FOLLOWER) {
-        if (last_election + election_interval < time_ns()) {
-          LOG("Starting election");
-          current_term++;
-          state = ServerState::CANDIDATE;
-          num_votes = 1;
-          voted_for = sid;
-          send_request_vote();
-        }
+        consider_election();
       } else if (state == ServerState::CANDIDATE) {
-        // send request vote
+        if (last_election + election_interval < time_ns()) {
+          // timeout
+          LOG("Election timeout");
+          state = ServerState::FOLLOWER;
+          last_election = time_ns();
+          self_election.reset();
+          voted_for.reset();
+          current_term++;
+          election_interval = get_election_interval();
+        }
       } else if (state == ServerState::LEADER) {
         // send append entries
+        consider_election();
+        send_append_entries();
       }
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   }
 
+  uint32_t get_id() { return sid; }
+
 private:
+  void consider_election() {
+    if (last_election + election_interval < time_ns()) {
+      LOG("Starting election");
+      current_term++;
+      state = ServerState::CANDIDATE;
+      self_election = SelfElection{1, 1};
+      voted_for = sid;
+      send_request_vote();
+      last_election = time_ns();
+    }
+  }
+
   void send_message(const std::string &msg, MessageType type) {
     for (const auto &[id, client] : clients) {
       client->send_to(sid, msg, type);
     }
   }
 
+  void send_message(const std::string &msg, MessageType type, uint32_t id) {
+    clients.at(id)->send_to(sid, msg, type);
+  }
+
   void send_request_vote() {
-    LOG("Sending request vote");
     RequestVote rv{current_term, sid, 0, 0};
     auto msg_str = build_message(rv, sid);
-    num_votes = 1;
     send_message(msg_str, MessageType::REQUEST_VOTE);
   };
 
-  void send_append_entries() { LOG("Sending append entries"); };
+  void send_append_entries() {
+    AppendEntries ae{current_term, sid, 0, 0, 0, {}};
+    auto msg_str = build_message(ae, sid);
+    send_message(msg_str, MessageType::APPEND_ENTRIES);
+  };
 
   void on_request_vote(Message m) {
     RequestVote rv = parse_message_contents<RequestVote>(m.msg);
     LOG("Received request vote from " + std::to_string(rv.candidate_id) +
         " for term " + std::to_string(rv.term));
+    RequestVoteResponse rvr{current_term, true};
     if (rv.term < current_term ||
         (voted_for.has_value() && voted_for != rv.candidate_id)) {
       LOG("Rejecting vote");
-      RequestVoteResponse rvr{current_term, false};
-      auto msg_str = build_message(rvr, sid);
-      clients.at(rv.candidate_id)
-          ->send_to(sid, msg_str, MessageType::REQUEST_VOTE_RESPONSE);
+      rvr.vote_granted = false;
     } else {
       LOG("Granting vote to " + std::to_string(rv.candidate_id));
       voted_for = rv.candidate_id;
-      RequestVoteResponse rvr{current_term, true};
-      auto msg_str = build_message(rvr, sid);
-      clients.at(m.id)->send_to(sid, msg_str,
-                                MessageType::REQUEST_VOTE_RESPONSE);
+      current_term = rv.term;
+      state = ServerState::FOLLOWER;
     }
-  };
+    auto msg_str = build_message(rvr, sid);
+    send_message(msg_str, MessageType::REQUEST_VOTE_RESPONSE, m.id);
+  }
 
   void on_request_vote_response(Message m) {
     RequestVoteResponse rvr =
@@ -126,16 +150,64 @@ private:
         " for term " + std::to_string(rvr.term) + " with vote " +
         std::to_string(rvr.vote_granted));
     if (rvr.vote_granted) {
-      num_votes++;
-      if (num_votes > clients.size() / 2) {
+      if (!self_election.has_value()) {
+        LOG_LEVEL("Received vote without starting election", LogLevel::ERROR);
+        exit(EXIT_FAILURE);
+      }
+      self_election->num_votes++;
+      auto num_nodes = clients.size() + 1;
+      if (self_election->num_votes > num_nodes / 2) {
         state = ServerState::LEADER;
         LOG("Becoming leader");
+      } else if (self_election->num_responded == num_nodes) {
+        LOG("Not enough votes");
+        self_election.reset();
+        state = ServerState::FOLLOWER;
+        voted_for.reset();
       }
     }
   };
 
-  void on_append_entries(Message m) { LOG("Received append entries"); };
+  void on_append_entries(Message m) {
+    LOG("Received append entries");
+    AppendEntries ae = parse_message_contents<AppendEntries>(m.msg);
+    switch (state) {
+    case ServerState::LEADER:
+      LOG_LEVEL("Leader received append entries", LogLevel::ERROR);
+      exit(EXIT_FAILURE);
+    case ServerState::CANDIDATE: {
+      AppendEntriesResponse aer;
+      if (ae.term >= current_term) {
+        current_term = ae.term;
+        state = ServerState::FOLLOWER;
+        last_election = time_ns();
+        append_entries(ae);
+        aer = {current_term, true};
+      } else {
+        LOG("Rejecting append entries");
+        aer = {current_term, false};
+      }
+      auto msg_str = build_message(aer, sid);
+      send_message(msg_str, MessageType::APPEND_ENTRIES_RESPONSE, m.id);
+      break;
+    }
+    case ServerState::FOLLOWER: {
+      if (ae.term >= current_term) {
+        current_term = ae.term;
+        last_election = time_ns();
+      }
+      AppendEntriesResponse aer{current_term, true};
+      auto msg_str = build_message(aer, sid);
+      send_message(msg_str, MessageType::APPEND_ENTRIES_RESPONSE, m.id);
+      append_entries(ae);
+    }
+    };
+  }
 
+  void append_entries(const AppendEntries &ae) {
+    LOG("Appending entries");
+    log.insert(log.end(), ae.entries.begin(), ae.entries.end());
+  }
   // persistent state
   uint32_t sid;
   std::unique_ptr<TcpServer> server;
@@ -143,8 +215,7 @@ private:
   uint64_t current_term = 0;
   std::optional<uint32_t> voted_for;
   std::vector<std::string> log;
-  uint32_t num_votes;
-
+  std::optional<SelfElection> self_election;
   ServerState state;
   int64_t election_interval;
   int64_t last_election;

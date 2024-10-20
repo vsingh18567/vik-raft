@@ -1,3 +1,4 @@
 .vscode
 raft-server
 *.dSYM
+log*.txt

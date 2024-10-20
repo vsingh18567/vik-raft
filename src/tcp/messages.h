@@ -14,8 +14,8 @@ struct AppendEntries {
   uint32_t leader_id;
   uint64_t prev_log_index;
   uint64_t prev_log_term;
-  std::vector<std::string> entries;
   uint64_t leader_commit;
+  std::vector<std::string> entries;
 
   constexpr static MessageType get_type() {
     return MessageType::APPEND_ENTRIES;
@@ -83,7 +83,46 @@ template <typename T> T parse_message_contents(const std::string &msg) {
   return t;
 }
 
+template <> AppendEntries parse_message_contents(const std::string &msg) {
+  AppendEntries ae;
+  ae.term = *reinterpret_cast<const uint64_t *>(msg.data());
+  ae.leader_id = *reinterpret_cast<const uint32_t *>(msg.data() + 8);
+  ae.prev_log_index = *reinterpret_cast<const uint64_t *>(msg.data() + 12);
+  ae.prev_log_term = *reinterpret_cast<const uint64_t *>(msg.data() + 20);
+  ae.leader_commit = *reinterpret_cast<const uint64_t *>(msg.data() + 28);
+  uint32_t entries_size = *reinterpret_cast<const uint32_t *>(msg.data() + 36);
+  uint32_t offset = 40;
+  for (uint32_t i = 0; i < entries_size; i++) {
+    uint32_t entry_size =
+        *reinterpret_cast<const uint32_t *>(msg.data() + offset);
+    std::string entry(msg.data() + offset + 4, entry_size);
+    ae.entries.push_back(entry);
+    offset += entry_size + 4;
+  }
+  return ae;
+}
+
 template <typename T> std::string build_message(const T &t, uint32_t id) {
   std::string t_str(reinterpret_cast<const char *>(&t), sizeof(T));
   return t_str;
+}
+
+template <> std::string build_message(const AppendEntries &ae, uint32_t id) {
+  std::string msg;
+  msg.append(reinterpret_cast<const char *>(&ae.term), sizeof(uint64_t));
+  msg.append(reinterpret_cast<const char *>(&ae.leader_id), sizeof(uint32_t));
+  msg.append(reinterpret_cast<const char *>(&ae.prev_log_index),
+             sizeof(uint64_t));
+  msg.append(reinterpret_cast<const char *>(&ae.prev_log_term),
+             sizeof(uint64_t));
+  msg.append(reinterpret_cast<const char *>(&ae.leader_commit),
+             sizeof(uint64_t));
+  uint32_t entries_size = ae.entries.size();
+  msg.append(reinterpret_cast<const char *>(&entries_size), sizeof(uint32_t));
+  for (const auto &entry : ae.entries) {
+    uint32_t entry_size = entry.size();
+    msg.append(reinterpret_cast<const char *>(&entry_size), sizeof(uint32_t));
+    msg.append(entry);
+  }
+  return build_message(msg, id, AppendEntries::get_type());
 }

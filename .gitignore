@@ -1,4 +1,17 @@
-.vscode
-raft-server
-*.dSYM
-log*.txt
+# Build directory
+build/
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Compiled files
+*.o
+*.pb.h
+*.pb.cc
+
+# IDE specific files
+.vscode/
+.idea/ 

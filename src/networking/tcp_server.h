@@ -1,6 +1,8 @@
 #pragma once
 
 #include "absl/log/log.h"
+#include "networking/message_handler.h"
+#include "node_id.h"
 #include <arpa/inet.h>
 #include <functional>
 #include <netinet/in.h>
@@ -10,18 +12,15 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
-
 namespace vikraft {
 
 class TcpServer {
 public:
-  using MessageHandler = std::function<void(const vikraft::Message &, int)>;
-
   TcpServer() : socket_fd_(-1), running_(false) {}
 
   ~TcpServer() { stop(); }
 
-  void start(int port, MessageHandler handler) {
+  void start(int port, MessageHandler *handler) {
     if (running_) {
       throw std::runtime_error("Server is already running");
     }
@@ -114,7 +113,7 @@ private:
   void handle_client(int client_fd) {
     const size_t buffer_size = 1024;
     std::string buffer(buffer_size, 0);
-    int client_id = -1;
+    NodeId client_id = -1;
     while (running_) {
       ssize_t bytes_received = recv(client_fd, &buffer[0], buffer_size, 0);
 
@@ -131,7 +130,7 @@ private:
         connect.ParseFromString(message.data());
         client_id = connect.id();
       } else {
-        handler_(message, client_id);
+        handler_->handle_message(message, client_id);
       }
       buffer.resize(buffer_size);
     }
@@ -142,7 +141,7 @@ private:
 
   int socket_fd_;
   bool running_;
-  MessageHandler handler_;
+  MessageHandler *handler_;
   std::thread accept_thread_;
   std::vector<std::thread> client_threads_;
 };

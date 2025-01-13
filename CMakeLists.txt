@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(MyProject VERSION 1.0)
+project(vikraft VERSION 1.0)
 
 # Set C++17 as the standard
 set(CMAKE_CXX_STANDARD 17)
@@ -30,6 +30,7 @@ add_executable(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_BINARY_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${Protobuf_INCLUDE_DIRS}
     ${PROTO_GEN_DIR}
 )

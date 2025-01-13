@@ -61,7 +61,6 @@ public:
     if (bytes_sent < 0) {
       throw std::runtime_error("Failed to send data");
     }
-    LOG(INFO) << "Sent " << bytes_sent << " bytes";
   }
 
   std::string receive(size_t max_length = 1024) {
@@ -77,7 +76,6 @@ public:
     }
 
     buffer.resize(bytes_received);
-    LOG(INFO) << "Received " << bytes_received << " bytes";
     return buffer;
   }
 

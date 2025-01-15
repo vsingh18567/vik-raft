@@ -7,9 +7,9 @@ public:
   Node(const NodeId &id, Config config, const std::string &log_file_path,
        const std::string &state_file_path)
       : id(id), log_file_path(log_file_path), state_file_path(state_file_path),
-        election_timer(),
-        state_manager(id, election_timer, config.cluster_size()),
-        network_manager(config, id, this) {}
+        cluster_members(config), election_timer(),
+        state_manager(id, election_timer, cluster_members),
+        network_manager(config, id, this, cluster_members) {}
 
   ~Node() = default;
 
@@ -111,20 +111,20 @@ private:
 
         // Wait for a reasonable time to collect votes (75% of min election
         // timeout)
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        // std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         // Reset election timer only if we didn't become leader
         if (!state_manager.is_leader()) {
           election_timer.reset();
         }
       } else {
-        // Check less frequently when we're not doing anything
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
     }
   }
   NodeId id;
   ElectionTimer election_timer;
+  ClusterMembers cluster_members;
 
   StateManager state_manager;
   NetworkManager network_manager;

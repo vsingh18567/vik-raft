@@ -16,7 +16,8 @@ namespace vikraft {
 
 class TcpServer {
 public:
-  TcpServer() : socket_fd_(-1), running_(false) {}
+  TcpServer(ClusterMembers &cluster_members)
+      : socket_fd_(-1), running_(false), cluster_members_(cluster_members) {}
 
   ~TcpServer() { stop(); }
 
@@ -118,6 +119,14 @@ private:
       ssize_t bytes_received = recv(client_fd, &buffer[0], buffer_size, 0);
 
       if (bytes_received <= 0) {
+        if (client_id != -1) {
+          LOG(INFO) << "Client disconnected or error";
+
+          cluster_members_.remove_node(client_id);
+          LOG(INFO) << "Cluster size: " << cluster_members_.size();
+        } else {
+          LOG(INFO) << "Uninitialized client disconnected or error";
+        }
         break; // Client disconnected or error
       }
 
@@ -129,6 +138,7 @@ private:
         vikraft::Connect connect;
         connect.ParseFromString(message.data());
         client_id = connect.id();
+        LOG(INFO) << "Client connected with id " << client_id;
       } else {
         handler_->handle_message(message, client_id);
       }
@@ -144,6 +154,7 @@ private:
   MessageHandler *handler_;
   std::thread accept_thread_;
   std::vector<std::thread> client_threads_;
+  ClusterMembers &cluster_members_;
 };
 
 } // namespace vikraft

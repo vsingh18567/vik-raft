@@ -59,7 +59,8 @@ public:
 
     ssize_t bytes_sent = ::send(socket_fd_, data.c_str(), data.length(), 0);
     if (bytes_sent < 0) {
-      throw std::runtime_error("Failed to send data");
+      LOG(WARNING) << "Failed to send data to " << host_ << ":" << port_;
+      disconnect();
     }
   }
 
@@ -80,6 +81,7 @@ public:
   }
 
   void disconnect() {
+    LOG(INFO) << "Disconnecting from " << host_ << ":" << port_;
     if (socket_fd_ >= 0) {
       close(socket_fd_);
       socket_fd_ = -1;

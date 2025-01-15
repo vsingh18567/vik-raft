@@ -1,4 +1,5 @@
 #pragma once
+#include "cluster_members.h"
 #include "election_timer.h"
 #include "messages.pb.h"
 #include "node_id.h"
@@ -9,13 +10,14 @@ enum class NodeState { FOLLOWER, CANDIDATE, LEADER };
 
 class StateManager {
 public:
-  StateManager(NodeId self_id, ElectionTimer &timer, size_t cluster_size)
+  StateManager(NodeId self_id, ElectionTimer &timer,
+               ClusterMembers &cluster_members)
       : self_id(self_id), current_term(0), voted_for(-1), commit_index(0),
         last_applied(0), state(NodeState::FOLLOWER), votes_received(0),
-        timer_(timer) {
+        timer_(timer), cluster_members_(cluster_members) {
     timer_.reset();
-    next_index.resize(cluster_size - 1, 0);
-    match_index.resize(cluster_size - 1, 0);
+    next_index.resize(cluster_members_.size() - 1, 0);
+    match_index.resize(cluster_members_.size() - 1, 0);
   }
 
   ~StateManager() = default;
@@ -129,9 +131,9 @@ public:
       LOG(INFO) << "Received vote from " << from << " with term "
                 << response.term();
       // If we have majority (including our self-vote)
-      if (votes_received > (next_index.size() + 1) / 2) {
+      if (votes_received > (cluster_members_.size() + 1) / 2) {
         LOG(INFO) << "Received majority votes: " << votes_received << " out of "
-                  << (next_index.size() + 1) << " needed";
+                  << cluster_members_.size() << " needed";
         become_leader();
       }
     }
@@ -259,6 +261,7 @@ private:
   int votes_received;
 
   ElectionTimer &timer_;
+  ClusterMembers &cluster_members_;
 };
 
 } // namespace vikraft

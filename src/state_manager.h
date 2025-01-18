@@ -10,14 +10,14 @@ enum class NodeState { FOLLOWER, CANDIDATE, LEADER };
 
 class StateManager {
 public:
-  StateManager(NodeId self_id, ElectionTimer &timer,
+  StateManager(NodeId self_id, ElectionTimer &timer, int cluster_size,
                ClusterMembers &cluster_members)
       : self_id(self_id), current_term(0), voted_for(-1), commit_index(0),
         last_applied(0), state(NodeState::FOLLOWER), votes_received(0),
         timer_(timer), cluster_members_(cluster_members) {
     timer_.reset();
-    next_index.resize(cluster_members_.size() - 1, 0);
-    match_index.resize(cluster_members_.size() - 1, 0);
+    next_index.resize(cluster_size - 1, 0);
+    match_index.resize(cluster_size - 1, 0);
   }
 
   ~StateManager() = default;
@@ -69,7 +69,6 @@ public:
     }
 
     timer_.reset();
-    // Check if log contains an entry at prev_log_index with prev_log_term
     if (args.prev_log_index() >= 0) {
       if (args.prev_log_index() >= log.size() ||
           log[args.prev_log_index()].term() != args.prev_log_term()) {
@@ -77,7 +76,6 @@ public:
       }
     }
 
-    // Append new entries
     size_t new_entry_index = args.prev_log_index() + 1;
     for (size_t i = 0; i < args.entries().size(); i++) {
       if (new_entry_index < log.size()) {
@@ -91,7 +89,6 @@ public:
       new_entry_index++;
     }
 
-    // Update commit index
     if (args.leader_commit() > commit_index) {
       commit_index =
           std::min(args.leader_commit(), static_cast<int>(log.size() - 1));
@@ -106,7 +103,7 @@ public:
     current_term++;
     state = NodeState::CANDIDATE;
     voted_for = self_id;
-    votes_received = 1; // Vote for self
+    votes_received = 1;
     timer_.reset();
   }
 
@@ -130,7 +127,6 @@ public:
       votes_received++;
       LOG(INFO) << "Received vote from " << from << " with term "
                 << response.term();
-      // If we have majority (including our self-vote)
       if (votes_received > (cluster_members_.size() + 1) / 2) {
         LOG(INFO) << "Received majority votes: " << votes_received << " out of "
                   << cluster_members_.size() << " needed";
@@ -208,7 +204,6 @@ private:
     next_index.resize(next_index.size(), log.size());
     match_index.resize(match_index.size(), 0);
 
-    // Send initial empty AppendEntries as heartbeat
     timer_.reset();
   }
 

@@ -8,12 +8,6 @@
 namespace vikraft {
 class ClusterMembers {
 public:
-  ClusterMembers(const Config &config) {
-    for (int i = 0; i < config.cluster_size(); i++) {
-      connected_nodes_.insert(i);
-    }
-  }
-
   void add_node(NodeId id) {
     std::lock_guard<std::mutex> lock(mutex_);
     connected_nodes_.insert(id);

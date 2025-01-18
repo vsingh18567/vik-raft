@@ -7,8 +7,8 @@ public:
   Node(const NodeId &id, Config config, const std::string &log_file_path,
        const std::string &state_file_path)
       : id(id), log_file_path(log_file_path), state_file_path(state_file_path),
-        cluster_members(config), election_timer(),
-        state_manager(id, election_timer, cluster_members),
+        election_timer(), state_manager(id, election_timer,
+                                        config.cluster_size(), cluster_members),
         network_manager(config, id, this, cluster_members) {}
 
   ~Node() = default;
@@ -102,18 +102,11 @@ private:
   void timeout_checker() {
     while (!shutdown_) {
       if (state_manager.is_leader()) {
-        // Send heartbeats every 50ms
         send_heartbeat();
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
       } else if (election_timer.has_elapsed()) {
-        // Start election and wait for responses
         start_election();
 
-        // Wait for a reasonable time to collect votes (75% of min election
-        // timeout)
-        // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-        // Reset election timer only if we didn't become leader
         if (!state_manager.is_leader()) {
           election_timer.reset();
         }

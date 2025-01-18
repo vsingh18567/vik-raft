@@ -3,9 +3,8 @@
 #include <iostream>
 #include <string>
 int main(int argc, char *argv[]) {
-  signal(SIGPIPE, SIG_IGN); // Move signal inside main
+  signal(SIGPIPE, SIG_IGN);
 
-  // Initialize the protobuf library
   GOOGLE_PROTOBUF_VERIFY_VERSION;
 
   vikraft::Config config("config.txt");

@@ -16,8 +16,11 @@ namespace vikraft {
 
 class TcpServer {
 public:
-  TcpServer(ClusterMembers &cluster_members)
-      : socket_fd_(-1), running_(false), cluster_members_(cluster_members) {}
+  TcpServer(ClusterMembers &cluster_members,
+            std::function<void(NodeId)> on_reconnect,
+            std::function<void(NodeId)> on_disconnect)
+      : socket_fd_(-1), running_(false), cluster_members_(cluster_members),
+        on_reconnect_(on_reconnect), on_disconnect_(on_disconnect) {}
 
   ~TcpServer() { stop(); }
 
@@ -122,8 +125,7 @@ private:
         if (client_id != -1) {
           LOG(INFO) << "Client disconnected or error";
 
-          cluster_members_.remove_node(client_id);
-          LOG(INFO) << "Cluster size: " << cluster_members_.size();
+          on_disconnect_(client_id);
         } else {
           LOG(INFO) << "Uninitialized client disconnected or error";
         }
@@ -138,6 +140,7 @@ private:
         vikraft::Connect connect;
         connect.ParseFromString(message.data());
         client_id = connect.id();
+        on_reconnect_(client_id);
         LOG(INFO) << "Client connected with id " << client_id;
       } else {
         handler_->handle_message(message, client_id);
@@ -155,6 +158,8 @@ private:
   std::thread accept_thread_;
   std::vector<std::thread> client_threads_;
   ClusterMembers &cluster_members_;
+  std::function<void(NodeId)> on_reconnect_;
+  std::function<void(NodeId)> on_disconnect_;
 };
 
 } // namespace vikraft

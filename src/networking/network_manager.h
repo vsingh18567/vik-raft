@@ -11,6 +11,7 @@
 
 namespace vikraft {
 
+
 class NetworkManager {
 public:
   NetworkManager(const Config &config, int id, MessageHandler *handler,

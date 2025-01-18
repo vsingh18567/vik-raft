@@ -48,6 +48,14 @@ public:
       state_manager.process_append_entries_response(message.from(), response);
       break;
     }
+    case MessageType::CLIENT_COMMAND: {
+      ClientCommand command;
+      command.ParseFromString(message.data());
+      ClientCommandResponse response = state_manager.on_client_command(command);
+      send_message(response, MessageType::CLIENT_COMMAND_RESPONSE,
+                   message.from());
+      break;
+    }
     default:
       LOG(ERROR) << "Unknown message type: " << message.type();
       exit(1);
@@ -65,7 +73,9 @@ public:
     request.set_prev_log_index(state_manager.get_last_log_index());
     request.set_prev_log_term(state_manager.get_last_log_term());
     request.set_leader_commit(state_manager.get_commit_index());
-
+    for (const auto &log : state_manager.get_logs_to_send()) {
+      request.add_entries()->CopyFrom(log);
+    }
     send_message(request, MessageType::APPEND_ENTRIES);
   }
 

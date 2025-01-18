@@ -4,6 +4,7 @@
 #include "messages.pb.h"
 #include "node_id.h"
 #include <chrono>
+#include <optional>
 
 namespace vikraft {
 enum class NodeState { FOLLOWER, CANDIDATE, LEADER };
@@ -14,7 +15,8 @@ public:
                ClusterMembers &cluster_members)
       : self_id(self_id), current_term(0), voted_for(-1), commit_index(0),
         last_applied(0), state(NodeState::FOLLOWER), votes_received(0),
-        timer_(timer), cluster_members_(cluster_members) {
+        timer_(timer), cluster_members_(cluster_members),
+        known_leader(std::nullopt) {
     timer_.reset();
     next_index.resize(cluster_size - 1, 0);
     match_index.resize(cluster_size - 1, 0);
@@ -38,7 +40,7 @@ public:
 
     if (args.term() > current_term) {
       LOG(INFO) << "Becoming follower due to higher term in RequestVote";
-      become_follower(args.term());
+      become_follower(args.term(), -1);
     }
 
     if ((voted_for == -1 || voted_for == args.candidate_id()) &&
@@ -65,7 +67,7 @@ public:
     }
 
     if (args.term() > current_term) {
-      become_follower(args.term());
+      become_follower(args.term(), args.leader_id());
     }
 
     timer_.reset();
@@ -119,7 +121,7 @@ public:
     if (response.term() > current_term) {
       LOG(INFO) << "Becoming follower from " << from << " with term "
                 << response.term();
-      become_follower(response.term());
+      become_follower(response.term(), -1);
       return;
     }
 
@@ -133,6 +135,22 @@ public:
         become_leader();
       }
     }
+  }
+
+  ClientCommandResponse on_client_command(const ClientCommand &args) {
+    ClientCommandResponse response;
+    response.set_is_leader(is_leader());
+    response.set_leader_id(known_leader.value_or(-1));
+    response.set_success(append_entry(args.command()));
+    return response;
+  }
+
+  std::vector<LogEntry> get_logs_to_send() const {
+    std::vector<LogEntry> logs;
+    for (int i = commit_index + 1; i < static_cast<int>(log.size()); i++) {
+      logs.push_back(log[i]);
+    }
+    return logs;
   }
 
   bool append_entry(const std::string &command) {
@@ -156,7 +174,7 @@ public:
     }
 
     if (response.term() > current_term) {
-      become_follower(response.term());
+      become_follower(response.term(), -1);
       return;
     }
 
@@ -178,6 +196,7 @@ public:
   }
 
   bool is_leader() const { return state == NodeState::LEADER; }
+  std::optional<NodeId> get_known_leader() const { return known_leader; }
   int get_current_term() const { return current_term; }
   NodeState get_state() const { return state; }
   int get_last_log_index() const { return static_cast<int>(log.size()) - 1; }
@@ -186,12 +205,14 @@ public:
   int get_commit_index() const { return commit_index; }
 
 private:
-  void become_follower(int new_term) {
+  void become_follower(int new_term, NodeId new_leader) {
     LOG(INFO) << "Becoming follower";
     state = NodeState::FOLLOWER;
     current_term = new_term;
     voted_for = -1;
     timer_.reset();
+    known_leader =
+        new_leader == -1 ? std::nullopt : std::optional<NodeId>(new_leader);
   }
 
   void become_leader() {
@@ -203,7 +224,7 @@ private:
     state = NodeState::LEADER;
     next_index.resize(next_index.size(), log.size());
     match_index.resize(match_index.size(), 0);
-
+    known_leader = self_id;
     timer_.reset();
   }
 
@@ -243,6 +264,7 @@ private:
   const NodeId self_id;
   int current_term;
   NodeId voted_for;
+  std::optional<NodeId> known_leader;
   std::vector<LogEntry> log;
 
   int commit_index;

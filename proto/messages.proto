@@ -37,12 +37,25 @@ message AppendEntriesResponse {
     int32 term = 1;
     bool success = 2;
 }
+
+message ClientCommand {
+    string command = 1;
+}
+
+message ClientCommandResponse {
+    bool is_leader = 1;
+    int32 leader_id = 2;
+    bool success = 3;
+}
+
 enum MessageType {
     CONNECT = 0;
     REQUEST_VOTE = 1;
     REQUEST_VOTE_RESPONSE = 2;
     APPEND_ENTRIES = 3;
     APPEND_ENTRIES_RESPONSE = 4;
+    CLIENT_COMMAND = 5;
+    CLIENT_COMMAND_RESPONSE = 6;
 }
 
 message Message {

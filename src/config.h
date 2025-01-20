@@ -1,9 +1,11 @@
 #pragma once
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
+using json = nlohmann::json;
 
 namespace vikraft {
 
@@ -12,28 +14,31 @@ struct NodeConfig {
   int port;
 };
 
+struct GatewayConfig {
+  std::string host;
+  int port;
+};
+
 class Config {
 public:
   Config(const std::string &config_path) {
     std::ifstream config_file(config_path);
-    std::string line;
-
-    while (std::getline(config_file, line)) {
-      std::istringstream iss(line);
-      std::string host;
-      int port;
-
-      if (!(iss >> host >> port)) {
-        throw std::runtime_error("Invalid config file format");
-      }
-
-      nodes.push_back(NodeConfig{host, port});
+    json config_json;
+    config_file >> config_json;
+    for (const auto &node : config_json["nodes"]) {
+      nodes.push_back(
+          NodeConfig{node["host"].get<std::string>(), node["port"].get<int>()});
+    }
+    for (const auto &gateway : config_json["gateways"]) {
+      gateways.push_back(GatewayConfig{gateway["host"].get<std::string>(),
+                                       gateway["port"].get<int>()});
     }
   }
 
   size_t cluster_size() const { return nodes.size(); }
 
   std::vector<NodeConfig> nodes;
+  std::vector<GatewayConfig> gateways;
 };
 
 } // namespace vikraft

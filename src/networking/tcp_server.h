@@ -14,13 +14,41 @@
 #include <vector>
 namespace vikraft {
 
+int initialize_socket(int port) {
+  int socket_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+  if (socket_fd_ < 0) {
+    throw std::runtime_error("Failed to create socket");
+  }
+
+  // Allow port reuse
+  int opt = 1;
+  if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+    close(socket_fd_);
+    throw std::runtime_error("Failed to set socket options");
+  }
+
+  struct sockaddr_in server_addr;
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_addr.s_addr = INADDR_ANY;
+  server_addr.sin_port = htons(port);
+
+  if (bind(socket_fd_, (struct sockaddr *)&server_addr, sizeof(server_addr)) <
+      0) {
+    close(socket_fd_);
+    throw std::runtime_error("Failed to bind socket");
+  }
+
+  if (listen(socket_fd_, SOMAXCONN) < 0) {
+    close(socket_fd_);
+    throw std::runtime_error("Failed to listen on socket");
+  }
+
+  return socket_fd_;
+}
+
 class TcpServer {
 public:
-  TcpServer(ClusterMembers &cluster_members,
-            std::function<void(NodeId)> on_reconnect,
-            std::function<void(NodeId)> on_disconnect)
-      : socket_fd_(-1), running_(false), cluster_members_(cluster_members),
-        on_reconnect_(on_reconnect), on_disconnect_(on_disconnect) {}
+  TcpServer() : socket_fd_(-1), running_(false) {}
 
   ~TcpServer() { stop(); }
 
@@ -28,40 +56,10 @@ public:
     if (running_) {
       throw std::runtime_error("Server is already running");
     }
-
-    socket_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd_ < 0) {
-      throw std::runtime_error("Failed to create socket");
-    }
-
-    // Allow port reuse
-    int opt = 1;
-    if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) <
-        0) {
-      close(socket_fd_);
-      throw std::runtime_error("Failed to set socket options");
-    }
-
-    struct sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(port);
-
-    if (bind(socket_fd_, (struct sockaddr *)&server_addr, sizeof(server_addr)) <
-        0) {
-      close(socket_fd_);
-      throw std::runtime_error("Failed to bind socket");
-    }
-
-    if (listen(socket_fd_, SOMAXCONN) < 0) {
-      close(socket_fd_);
-      throw std::runtime_error("Failed to listen on socket");
-    }
-
+    socket_fd_ = initialize_socket(port);
     running_ = true;
     handler_ = handler;
 
-    // Start accept thread
     accept_thread_ = std::thread(&TcpServer::accept_connections, this);
     LOG(INFO) << "Server started on port " << port;
   }
@@ -93,7 +91,23 @@ public:
     }
   }
 
-private:
+  bool send_message(int client_fd, const std::string &data) {
+    ssize_t total_sent = 0;
+    ssize_t len = data.length();
+
+    while (total_sent < len) {
+      ssize_t sent =
+          send(client_fd, data.c_str() + total_sent, len - total_sent, 0);
+      if (sent < 0) {
+        LOG(ERROR) << "Failed to send message to client";
+        return false;
+      }
+      total_sent += sent;
+    }
+    return true;
+  }
+
+protected:
   void accept_connections() {
     while (running_) {
       struct sockaddr_in client_addr;
@@ -114,6 +128,24 @@ private:
     }
   }
 
+  virtual void handle_client(int client_fd) = 0;
+
+  int socket_fd_;
+  bool running_;
+  MessageHandler *handler_;
+  std::thread accept_thread_;
+  std::vector<std::thread> client_threads_;
+};
+
+class NodeTcpServer : public TcpServer {
+public:
+  NodeTcpServer(ClusterMembers &cluster_members,
+                std::function<void(NodeId)> on_reconnect,
+                std::function<void(NodeId)> on_disconnect)
+      : cluster_members_(cluster_members), on_reconnect_(on_reconnect),
+        on_disconnect_(on_disconnect) {}
+
+private:
   void handle_client(int client_fd) {
     const size_t buffer_size = 1024;
     std::string buffer(buffer_size, 0);
@@ -143,7 +175,7 @@ private:
         on_reconnect_(client_id);
         LOG(INFO) << "Client connected with id " << client_id;
       } else {
-        handler_->handle_message(message, client_id);
+        handler_->handle_message(message, client_id, client_fd);
       }
       buffer.resize(buffer_size);
     }
@@ -152,14 +184,13 @@ private:
     LOG(INFO) << "Client disconnected";
   }
 
-  int socket_fd_;
-  bool running_;
-  MessageHandler *handler_;
-  std::thread accept_thread_;
-  std::vector<std::thread> client_threads_;
   ClusterMembers &cluster_members_;
   std::function<void(NodeId)> on_reconnect_;
   std::function<void(NodeId)> on_disconnect_;
+};
+
+class GatewayTcpServer : public TcpServer {
+private:
 };
 
 } // namespace vikraft

@@ -18,7 +18,7 @@ public:
     timeout_checker_thread_ = std::thread(&Node::timeout_checker, this);
   }
 
-  void handle_message(const Message &message, NodeId from) {
+  void handle_message(const Message &message, NodeId from, int client_fd) {
     switch (message.type()) {
     case MessageType::REQUEST_VOTE: {
       RequestVote request;
@@ -49,11 +49,11 @@ public:
       break;
     }
     case MessageType::CLIENT_COMMAND: {
-      ClientCommand command;
-      command.ParseFromString(message.data());
-      ClientCommandResponse response = state_manager.on_client_command(command);
-      send_message(response, MessageType::CLIENT_COMMAND_RESPONSE,
-                   message.from());
+      state_manager.append_entry(message.data());
+      std::thread await_thread([this, client_fd]() {
+        await_log_commit(client_fd, state_manager.get_last_log_index());
+      });
+      await_thread.detach();
       break;
     }
     default:
@@ -125,12 +125,29 @@ private:
       }
     }
   }
+
+  void await_log_commit(int client_fd, int log_index) {
+    while (true) {
+      if (state_manager.get_commit_index() >= log_index) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    ClientCommandResponse response;
+    response.set_is_leader(state_manager.is_leader());
+    response.set_leader_id(id);
+    response.set_success(true);
+    network_manager.send_server_response(response.SerializeAsString(),
+                                         client_fd);
+  }
+
   NodeId id;
   ElectionTimer election_timer;
   ClusterMembers cluster_members;
 
   StateManager state_manager;
-  NetworkManager network_manager;
+  NodeNetworkManager network_manager;
   const std::string log_file_path;
   const std::string state_file_path;
   std::atomic<bool> shutdown_{false};

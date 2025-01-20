@@ -11,11 +11,10 @@
 
 namespace vikraft {
 
-
-class NetworkManager {
+class NodeNetworkManager {
 public:
-  NetworkManager(const Config &config, int id, MessageHandler *handler,
-                 ClusterMembers &cluster_members)
+  NodeNetworkManager(const Config &config, int id, MessageHandler *handler,
+                     ClusterMembers &cluster_members)
       : my_id(id),
         server_(
             cluster_members, [this](NodeId id_) { on_reconnect(id_); },
@@ -46,6 +45,9 @@ public:
       }
     }
   }
+  void send_server_response(const std::string &message, int client_fd) {
+    server_.send_message(client_fd, message);
+  }
 
   void send_message(const std::string &message) {
     for (int i = 0; i < clients_.size(); i++) {
@@ -63,7 +65,7 @@ public:
     }
   }
 
-  ~NetworkManager() { server_.stop(); }
+  ~NodeNetworkManager() { server_.stop(); }
 
 private:
   void send_connect_message(NodeId to) {
@@ -89,7 +91,7 @@ private:
     cluster_members_.remove_node(id);
   }
   NodeId my_id;
-  TcpServer server_;
+  NodeTcpServer server_;
   std::vector<TcpClient> clients_;
   ClusterMembers &cluster_members_;
 };

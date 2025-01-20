@@ -2,6 +2,12 @@
 
 A distributed key-value store using the Raft consensus algorithm. Just for fun and educational purposes.
 
+## TODO
+- persistence
+- log recovery
+- log compaction
+- testing
+
 ## Prerequisites
 
 - CMake (3.10 or higher)

@@ -7,8 +7,8 @@ int main(int argc, char *argv[]) {
 
   GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-  vikraft::Config config("config.json");
-  vikraft::Node node(std::stoi(argv[1]), config, "log.txt", "state.txt");
+  vikraft::Config config(argv[1]);
+  vikraft::Node node(std::stoi(argv[2]), config, "log.txt", "state.txt");
   node.start();
   while (true) {
   }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "messages.pb.h"
-#include "node_id.h"
+#include "node/node_id.h"
 
 namespace vikraft {
 

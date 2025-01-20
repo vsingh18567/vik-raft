@@ -9,7 +9,7 @@ message Connect {
 message LogEntry {
     int32 id = 1;
     int32 term = 2;
-    string command = 3;
+    bytes command = 3;
 }
 
 message RequestVote {
@@ -39,7 +39,7 @@ message AppendEntriesResponse {
 }
 
 message ClientCommand {
-    string command = 1;
+    bytes command = 1;
 }
 
 message ClientCommandResponse {

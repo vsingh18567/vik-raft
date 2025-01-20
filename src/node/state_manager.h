@@ -13,8 +13,8 @@ class StateManager {
 public:
   StateManager(NodeId self_id, ElectionTimer &timer, int cluster_size,
                ClusterMembers &cluster_members)
-      : self_id(self_id), current_term(0), voted_for(-1), commit_index(0),
-        last_applied(0), state(NodeState::FOLLOWER), votes_received(0),
+      : self_id(self_id), current_term(0), voted_for(-1), commit_index(-1),
+        last_applied(-1), state(NodeState::FOLLOWER), votes_received(0),
         timer_(timer), cluster_members_(cluster_members),
         known_leader(std::nullopt) {
     timer_.reset();
@@ -63,6 +63,7 @@ public:
     response.set_success(false);
 
     if (args.term() < current_term) {
+      LOG(INFO) << "Rejecting append entries: candidate term is lower";
       return response;
     }
 
@@ -74,12 +75,16 @@ public:
     if (args.prev_log_index() >= 0) {
       if (args.prev_log_index() >= log.size() ||
           log[args.prev_log_index()].term() != args.prev_log_term()) {
+        LOG(INFO) << "Rejecting append entries: prev log index "
+                  << args.prev_log_index() << " is out of bounds or term "
+                  << args.prev_log_term() << " does not match";
         return response;
       }
     }
 
     size_t new_entry_index = args.prev_log_index() + 1;
     for (size_t i = 0; i < args.entries().size(); i++) {
+      LOG(INFO) << "Appending entry: " << args.entries(i).command();
       if (new_entry_index < log.size()) {
         if (log[new_entry_index].term() != args.entries(i).term()) {
           log.resize(new_entry_index);
@@ -158,6 +163,8 @@ public:
       return false;
     }
 
+    LOG(INFO) << "Appending entry: " << command;
+
     LogEntry entry;
     entry.set_id(self_id);
     entry.set_term(current_term);
@@ -203,6 +210,13 @@ public:
 
   int get_last_log_term() const { return log.empty() ? 0 : log.back().term(); }
   int get_commit_index() const { return commit_index; }
+
+  int get_log_term(int index) const {
+    if (index < 0 || index >= static_cast<int>(log.size())) {
+      return 0;
+    }
+    return log[index].term();
+  }
 
 private:
   void become_follower(int new_term, NodeId new_leader) {

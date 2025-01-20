@@ -2,7 +2,8 @@
 
 #include "absl/log/log.h"
 #include "networking/message_handler.h"
-#include "node_id.h"
+#include "node/cluster_members.h"
+#include "node/node_id.h"
 #include <arpa/inet.h>
 #include <functional>
 #include <netinet/in.h>
@@ -175,7 +176,11 @@ private:
         on_reconnect_(client_id);
         LOG(INFO) << "Client connected with id " << client_id;
       } else {
-        handler_->handle_message(message, client_id, client_fd);
+        handler_->handle_message(message, client_id,
+                                 client_fd); // I do not like that client_fd
+                                             // and client_id needs to be
+                                             // passed around, but it works
+                                             // for now
       }
       buffer.resize(buffer_size);
     }
@@ -191,6 +196,37 @@ private:
 
 class GatewayTcpServer : public TcpServer {
 private:
-};
+  void handle_client(int client_fd) {
+    const size_t buffer_size = 1024;
+    std::string buffer(buffer_size, 0);
+    while (running_) {
+      ssize_t bytes_received = recv(client_fd, &buffer[0], buffer_size, 0);
 
+      if (bytes_received <= 0) {
+        LOG(INFO) << "Client disconnected or error";
+        break; // Client disconnected or error
+      }
+
+      buffer.resize(bytes_received);
+      try {
+        json j = json::parse(buffer);
+        std::string data = j["data"];
+        vikraft::Message message;
+        message.set_type(vikraft::MessageType::CLIENT_COMMAND);
+        ClientCommand command;
+        command.set_command(data);
+        message.set_data(command.SerializeAsString());
+        handler_->handle_message(message, -1,
+                                 client_fd); // client id not relevant for
+                                             // gateway
+
+      } catch (const std::exception &e) {
+        LOG(ERROR) << "Failed to parse message: " << e.what();
+        send_message(client_fd, "{\"success\": false}");
+        continue;
+      }
+      buffer.resize(buffer_size);
+    }
+  }
+};
 } // namespace vikraft

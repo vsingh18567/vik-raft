@@ -17,7 +17,10 @@ public:
   TcpClient(const std::string host, int port)
       : host_(host), port_(port), socket_fd_(-1) {}
 
-  ~TcpClient() { disconnect(); }
+  ~TcpClient() {
+    LOG(WARNING) << "Fade " << host_ << ":" << port_;
+    disconnect();
+  }
 
   void connect() {
     while (true) {

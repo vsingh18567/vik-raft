@@ -49,11 +49,9 @@ public:
       break;
     }
     case MessageType::CLIENT_COMMAND: {
-      state_manager.append_entry(message.data());
-      std::thread await_thread([this, client_fd]() {
-        await_log_commit(client_fd, state_manager.get_last_log_index());
-      });
-      await_thread.detach();
+      ClientCommand command;
+      command.ParseFromString(message.data());
+      process_client_command(command, client_fd);
       break;
     }
     default:
@@ -62,7 +60,7 @@ public:
     }
   }
 
-  void send_heartbeat() {
+  void send_logs() {
     if (!state_manager.is_leader()) {
       return;
     }
@@ -70,10 +68,18 @@ public:
     AppendEntries request;
     request.set_term(state_manager.get_current_term());
     request.set_leader_id(id);
-    request.set_prev_log_index(state_manager.get_last_log_index());
-    request.set_prev_log_term(state_manager.get_last_log_term());
+    auto logs_to_send = state_manager.get_logs_to_send();
+    if (logs_to_send.empty()) {
+      request.set_prev_log_index(state_manager.get_last_log_index());
+      request.set_prev_log_term(state_manager.get_last_log_term());
+    } else {
+      request.set_prev_log_index(state_manager.get_commit_index());
+      request.set_prev_log_term(
+          state_manager.get_log_term(state_manager.get_commit_index()));
+    }
     request.set_leader_commit(state_manager.get_commit_index());
-    for (const auto &log : state_manager.get_logs_to_send()) {
+    for (const auto &log : logs_to_send) {
+      LOG(INFO) << "Sending log: " << log.command();
       request.add_entries()->CopyFrom(log);
     }
     send_message(request, MessageType::APPEND_ENTRIES);
@@ -109,10 +115,23 @@ private:
     network_manager.send_message(message_to_send.SerializeAsString(), to);
   }
 
+  void send_client_command_response(bool success, int client_fd) {
+    ClientCommandResponse response;
+    response.set_is_leader(state_manager.is_leader());
+    response.set_leader_id(state_manager.get_known_leader().value_or(-1));
+    response.set_success(success);
+    Message message_to_send;
+    message_to_send.set_type(MessageType::CLIENT_COMMAND_RESPONSE);
+    message_to_send.set_from(id);
+    message_to_send.set_data(response.SerializeAsString());
+    network_manager.send_server_response(message_to_send.SerializeAsString(),
+                                         client_fd);
+  }
+
   void timeout_checker() {
     while (!shutdown_) {
       if (state_manager.is_leader()) {
-        send_heartbeat();
+        send_logs();
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
       } else if (election_timer.has_elapsed()) {
         start_election();
@@ -134,12 +153,20 @@ private:
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    ClientCommandResponse response;
-    response.set_is_leader(state_manager.is_leader());
-    response.set_leader_id(id);
-    response.set_success(true);
-    network_manager.send_server_response(response.SerializeAsString(),
-                                         client_fd);
+    send_client_command_response(true, client_fd);
+  }
+
+  void process_client_command(const ClientCommand &command, int client_fd) {
+    if (!state_manager.is_leader()) {
+      send_client_command_response(false, client_fd);
+      return;
+    }
+    LOG(INFO) << "Appending entry: " << command.command();
+    state_manager.append_entry(command.command());
+    std::thread await_thread([this, client_fd]() {
+      await_log_commit(client_fd, state_manager.get_last_log_index());
+    });
+    await_thread.detach();
   }
 
   NodeId id;

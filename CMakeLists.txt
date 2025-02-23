@@ -1,96 +1,64 @@
-cmake_minimum_required(VERSION 3.10)
-project(vikraft VERSION 1.0)
+cmake_minimum_required(VERSION 3.15)
+project(grpc_example)
 
-# Set C++17 as the standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find Protocol Buffers
-find_package(Protobuf REQUIRED)
+# Set output directories
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(GENERATED_PROTO_DIR ${CMAKE_BINARY_DIR}/proto)
+file(MAKE_DIRECTORY ${GENERATED_PROTO_DIR})
 
-# Set the output directory for generated protobuf files
-set(PROTO_GEN_DIR "${CMAKE_BINARY_DIR}/generated")
-file(MAKE_DIRECTORY ${PROTO_GEN_DIR})
+# Find gRPC first (it will find its own compatible protobuf)
+find_package(gRPC CONFIG REQUIRED)
 
-# Generate protobuf files
-protobuf_generate_cpp(
-    PROTO_SRCS 
-    PROTO_HDRS 
-    ${CMAKE_CURRENT_SOURCE_DIR}/proto/messages.proto
+# Generate protobuf and gRPC code
+set(PROTO_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/proto/service.proto"
 )
 
-# Add release executable
-add_executable(${PROJECT_NAME}_node 
-    src/node/main.cpp
-    ${PROTO_SRCS}
-    ${PROTO_HDRS}
+add_library(proto_lib STATIC)
+
+# Set include directories for the library
+target_include_directories(proto_lib
+    PUBLIC
+    ${GENERATED_PROTO_DIR}
 )
 
-# Add debug executable
-add_executable(${PROJECT_NAME}_node_debug
-    src/node/main.cpp
-    ${PROTO_SRCS}
-    ${PROTO_HDRS}
+target_link_libraries(proto_lib
+    PUBLIC
+    gRPC::grpc++
+    gRPC::grpc++_reflection
 )
 
-add_executable(${PROJECT_NAME}_gateway
-    src/gateway/main.cpp
-    ${PROTO_SRCS}
-    ${PROTO_HDRS}
+# Generate the gRPC and protobuf sources
+get_target_property(grpc_cpp_plugin_location gRPC::grpc_cpp_plugin LOCATION)
+
+# Configure protobuf generation to output to the generated directory
+protobuf_generate(
+    TARGET proto_lib 
+    LANGUAGE cpp 
+    PROTOS ${PROTO_FILES}
+    IMPORT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/proto
+    PROTOC_OUT_DIR ${GENERATED_PROTO_DIR}
 )
 
-target_compile_options(${PROJECT_NAME}_node_debug PRIVATE -g -O0 -Wall -Wextra -Wpedantic)
-
-# Include directories (add for both targets)
-target_include_directories(${PROJECT_NAME}_node PUBLIC
-    ${CMAKE_BINARY_DIR}
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/node
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking
-    ${CMAKE_CURRENT_SOURCE_DIR}/lib/json/include
-    ${Protobuf_INCLUDE_DIRS}
-    ${PROTO_GEN_DIR}
-)
-target_include_directories(${PROJECT_NAME}_node_debug PUBLIC
-    ${CMAKE_BINARY_DIR}
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/node
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking
-    ${CMAKE_CURRENT_SOURCE_DIR}/lib/json/include
-    ${Protobuf_INCLUDE_DIRS}
-    ${PROTO_GEN_DIR}
+protobuf_generate(
+    TARGET proto_lib 
+    LANGUAGE grpc
+    GENERATE_EXTENSIONS .grpc.pb.h .grpc.pb.cc
+    PLUGIN "protoc-gen-grpc=${grpc_cpp_plugin_location}"
+    PROTOS ${PROTO_FILES}
+    IMPORT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/proto
+    PROTOC_OUT_DIR ${GENERATED_PROTO_DIR}
 )
 
-target_include_directories(${PROJECT_NAME}_gateway PUBLIC
-    ${CMAKE_BINARY_DIR}
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/gateway
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/networking
-    ${CMAKE_CURRENT_SOURCE_DIR}/lib/json/include
-    ${Protobuf_INCLUDE_DIRS}
-    ${PROTO_GEN_DIR}
+# Server executable
+add_executable(server src/main.cpp src/raft_node.cpp src/raft_network.cpp src/timer.cpp)
+target_link_libraries(server
+    PRIVATE
+    proto_lib
 )
-
-# Link libraries (add for both targets)
-target_link_libraries(${PROJECT_NAME}_node PUBLIC
-    ${Protobuf_LIBRARIES}
-    absl::log
-    absl::check
-)
-target_link_libraries(${PROJECT_NAME}_node_debug PUBLIC
-    ${Protobuf_LIBRARIES}
-    absl::log
-    absl::check
-)
-
-target_link_libraries(${PROJECT_NAME}_gateway PUBLIC
-    ${Protobuf_LIBRARIES}
-    absl::log
-    absl::check
-)
-
-# Add Abseil dependency
-find_package(absl REQUIRED)
+target_include_directories(server PRIVATE ${GENERATED_PROTO_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
